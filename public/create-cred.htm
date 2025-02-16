@@ -1,0 +1,158 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="" rel="stylesheet" />
+    <title>credential creation page</title>
+    <style>
+      .flexi {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body style="background-color: white">
+    <div class="flexi">
+      <h2>customers Bank Credential creation Page</h2>
+      <img src="./bank.png" alt="bank" width="30" />
+    </div>
+
+    <div id="loginUI">
+      <h2>login</h2>
+
+      <label>enter thr OTP sent to friskmojo@yopmail.com</label>
+      <input type="number" id="Otp" value="123456" />
+
+      <button id="signInBtn">sign in</button>
+    </div>
+
+    <div id="credentialCreationUI" style="display: none">
+      <center>
+        <h2>Register Passkey</h2>
+        <img
+          src="./canonical-passkey-icon.png"
+          alt="passkey-icon"
+          width="200"
+        />
+
+        <button id="createPasskeyBtn" class="flexi">
+          <span>create passkey</span>
+        </button>
+      </center>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.es5.umd.min.js"></script>
+    <script>
+      let otpToken = '';
+
+      let email = '';
+      window.onload = function () {
+        const urlParams = new URLSearchParams(window.location.search);
+        email = urlParams.get('email');
+
+        if (email) {
+          requestForLoginOTP(email);
+        }
+
+        console.log(email);
+      };
+
+      signInBtn.addEventListener('click', handleSignIn);
+
+      createPasskeyBtn.onclick = createSPCPasskey;
+
+      async function requestForLoginOTP(email) {
+        try {
+          const res = await axios.post('/api/v1/auth/otp/sign-in', {
+            email,
+          });
+
+          otpToken = res.data.data.token;
+
+          console.log(otpToken);
+        } catch (error) {
+          console.log('error');
+        }
+      }
+
+      async function handleSignIn() {
+        try {
+          console.log(Otp.value, otpToken);
+          if (!Otp.value || !otpToken) {
+            alert('error occured');
+            return;
+          }
+          signInBtn.disabled = true;
+          console.log('came to post');
+          const res = await axios.post('/api/v1/auth/sign-in', {
+            email,
+            otp: Otp.value,
+            token: otpToken,
+          });
+          console.log('blu blu');
+
+          localStorage.setItem('token', res.data.data.token);
+          loginUI.style.display = 'none';
+          credentialCreationUI.style.display = 'block';
+        } catch (error) {
+          console.log(error);
+        } finally {
+          signInBtn.disabled = false;
+        }
+      }
+
+      function getHeaders() {
+        return {
+          'Content-type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        };
+      }
+
+      async function getPasskeyCredentialCreationOptions() {
+        return await axios.post(
+          '/api/v1/web-authn/generate-registration-options',
+          {},
+          {
+            headers: getHeaders(),
+          },
+        );
+      }
+
+      async function submitAttestationResponse(attestationRes) {
+        await axios.post(
+          '/api/v1/web-authn/finalize-passkey-registration',
+          attestationRes,
+          {
+            headers: getHeaders(),
+          },
+        );
+      }
+
+      async function createSPCPasskey() {
+        try {
+          const resp = await getPasskeyCredentialCreationOptions();
+
+          const credentialCreationOptions = resp.data.data;
+
+          const attestationRes = await SimpleWebAuthnBrowser.startRegistration({
+            optionsJSON: {
+              ...credentialCreationOptions,
+              mediation: 'optional',
+              extensions: {
+                payment: {
+                  isPayment: true,
+                },
+              },
+            },
+          });
+          await submitAttestationResponse(attestationRes);
+          window.parent.postMessage({ done: true }, 'http://localhost:5500');
+        } catch (error) {
+          console.log(error);
+        }
+      }
+    </script>
+  </body>
+</html>

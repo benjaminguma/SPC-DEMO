@@ -1,0 +1,281 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="" rel="stylesheet" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/daisyui@2.6.0/dist/full.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.es5.umd.min.js"></script>
+    <title>bank page</title>
+
+    <style>
+      #pp:checked + #iframeBox {
+        display: none;
+      }
+    </style>
+
+    <script defer>
+      window.addEventListener('message', async (event) => {
+        if (event.origin === 'http://localhost:4300') {
+          if (event.data?.done) {
+            paymentBtn.textContent = 'processing payment....';
+            paymentBtn.style.disabled = true;
+
+            iframeBox.style.display = 'none';
+
+            const iFrame = iframeBox.children[0];
+
+            iFrame.src = 'about:blank';
+
+            // await requestForPaymentAuthorization();
+            confirmPaymentSuccess();
+          }
+        }
+
+        // …
+      });
+
+      let authorizationResponse;
+
+      async function requestForPaymentAuthorization() {
+        const payload = {
+          total: '50.00',
+          currency: 'USD',
+
+          transaction_ref: window.crypto.randomUUID(),
+
+          payer: {
+            email: 'friskmojo@yopmail.com',
+            payment_instrument: {
+              type: 'card',
+              data: {
+                card_no: paymentForm.card_no.value,
+                cvv: paymentForm.cvv.value,
+                expiry: paymentForm.expiry.value,
+                holders_name: paymentForm.holders_name.value,
+              },
+            },
+
+            payee: {
+              name: 'Merchant 1',
+            },
+
+            assertion: null,
+          },
+        };
+
+        const resp = await axios.post(
+          'http://localhost:4300/api/v1/payment/request-authorization',
+          payload,
+        );
+
+        authorizationResponse = resp.data.details;
+
+        if (authorizationResponse.status === 'AUTHENTICATION_REQUIRED') {
+          if (authorizationResponse.redirect_url) {
+            // open iframse and create spc credential
+
+            iframeBox.style.display = 'block';
+
+            const iFrame = iframeBox.children[0];
+
+            iFrame.src = authorizationResponse.redirect_url;
+
+            paymentBtn.textContent = 'awaiting credential creation...';
+            paymentBtn.style.disabled = true;
+          } else {
+            getCustomersPaymentAssertionAndVerify(
+              payload,
+              authorizationResponse.credentialRequestOptions,
+            );
+          }
+        } else if (authorizationResponse.status === 'PAYMENT_APPROVED') {
+          paymentBtn.textContent = 'payment successful';
+          paymentBtn.style.disabled = true;
+        }
+      }
+
+      async function getCustomersPaymentAssertionAndVerify(
+        transactionPayload,
+        credentialRequestOptions,
+      ) {
+        // interact with   PaymentRequest api here
+
+        const pr = new PaymentRequest(
+          [
+            {
+              supportedMethods: 'secure-payment-confirmation',
+              data: {
+                // List of credential IDs obtained from the bank.
+                credentialIds: credentialRequestOptions.allowCredentials.map(
+                  (c) => SimpleWebAuthnBrowser.base64URLStringToBuffer(c.id),
+                ),
+
+                rpId: credentialRequestOptions.rpId,
+
+                challenge: SimpleWebAuthnBrowser.base64URLStringToBuffer(
+                  credentialRequestOptions.challenge,
+                ),
+
+                instrument: {
+                  displayName: `${transactionPayload.payer.payment_instrument.data.holders_name} *****${transactionPayload.payer.payment_instrument.data.card_no.slice(-6)} `,
+                  icon: 'http://localhost:4300/public/visa.png',
+                  iconMustBeShown: false,
+                },
+
+                locale: ['en'],
+
+                payeeName: transactionPayload.payee?.name || 'merchant 1',
+                payeeOrigin: 'https://localhost:5500',
+
+                timeout: 3600000, // 5 minutes
+              },
+            },
+          ],
+
+          {
+            total: {
+              label: 'Total',
+              amount: {
+                currency: transactionPayload.currency,
+                value: transactionPayload.total,
+              },
+            },
+          },
+        );
+        const canMakePayment = await pr.canMakePayment();
+
+        console.log(canMakePayment);
+        const paymentResponse = await pr.show();
+
+        await paymentResponse.complete('success');
+
+        // submit paymanet Response to ACS
+
+        console.log(paymentResponse);
+
+        confirmPaymentSuccess();
+
+        return paymentResponse.details;
+      }
+
+      function confirmPaymentSuccess() {
+        paymentBtn.textContent = 'payment successful!';
+        paymentBtn.style.disabled = true;
+
+        alert('payment successful');
+      }
+    </script>
+  </head>
+  <body>
+    <div
+      class="max-w-[500px] mx-auto my-[4rem] rounded-sm border-gray-500 border p-5 [&>div]:p-2 grid gap-3"
+    >
+      <h2>Checkout</h2>
+
+      <div class="flex justify-between items-start">
+        <div class="flex item-center gap-2">
+          <img src="./bike.webp" alt="bicycle" width="60" />
+          <p>DMX_ mountain bike</p>
+        </div>
+        <p>$50</p>
+      </div>
+
+      <form class="grid gap-2" id="paymentForm">
+        <h2>Payment Method</h2>
+        <aside class="border-gray-700 border divide-y divide-gray-600">
+          <div class="flex justify-between items-start p-3 bg-neutral-900">
+            <h2>Card</h2>
+          </div>
+
+          <div class="grid p-5 grid-cols-[1fr,1fr] gap-2">
+            <label class="form-control w-full">
+              <div class="label">
+                <span class="label-text">card Number</span>
+              </div>
+              <input
+                class="input input-bordered w-full"
+                type="text"
+                value="519902340192"
+                placeholder="3333 3333 3333 3333"
+                name="card_no"
+              />
+            </label>
+            <label class="form-control w-full">
+              <div class="label">
+                <span class="label-text">name on card</span>
+              </div>
+              <input
+                class="input input-bordered w-full"
+                type="text"
+                autocomplete="cc-csc"
+                placeholder="e.g john bobo"
+                value="frisk mojo"
+                name="holders_name"
+              />
+            </label>
+            <label class="form-control w-full">
+              <div class="label">
+                <span class="label-text">expiry date</span>
+              </div>
+              <input
+                class="input input-bordered w-full"
+                type="text"
+                autocomplete="cc-exp"
+                placeholder="05/29"
+                value="06/29"
+                name="expiry"
+              />
+            </label>
+            <label class="form-control w-full">
+              <div class="label">
+                <span class="label-text">cvv/cc</span>
+              </div>
+              <input
+                class="input input-bordered w-full"
+                type="text"
+                autocomplete="cc-csc"
+                placeholder="XXX"
+                value="wayoo"
+                name="cvv"
+              />
+            </label>
+          </div>
+        </aside>
+        <div class="grid-gap-3 mb-20">
+          <h4>Order Summary</h4>
+
+          <div class="flex justify-between items-center border-t py-1">
+            <p><b>Total:</b></p>
+
+            <span> $50</span>
+          </div>
+        </div>
+
+        <button
+          class="btn btn-success"
+          type="button"
+          id="paymentBtn"
+          onclick="requestForPaymentAuthorization()"
+        >
+          pay $50
+        </button>
+        <div id="iframeBox" style="display: none">
+          <iframe
+            allow="payment"
+            src="about:blank"
+            width="400"
+            height="200"
+            style="border: 2px solid red; display: block"
+          />
+        </div>
+      </form>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,31 @@
+services:
+  hopter-funcs:
+    build:
+      context: .
+      dockerfile: DockerFile.prod
+      target: development
+    env_file:
+      - ./.env.prod
+    environment:  
+      - NODE_ENV=production
+    ports:
+      - "4300:2900"
+      - "9005:9005"
+      - "9199:9199"
+      - "5001:5001"
+      - "4001:4000"
+      - "4400:4400"
+    volumes:
+      - ./src:/app/src
+      - /app/node_modules
+    command: npm run start:dev
+    container_name: hopter
+  pgAdmin:
+    image: dpage/pgadmin4
+    env_file:
+      - ./.env.prod
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "8080:80"
